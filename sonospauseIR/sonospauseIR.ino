@@ -13,9 +13,10 @@
  *	2010-04-24 simon added volume control
  */
 
-#include <Client.h>
+#include <SPI.h>
 #include <Ethernet.h>
 #include <IRremote.h>
+#include <PString.h>
 
 /*----------------------------------------------------------------------*/
 /* Macros and constants */
@@ -70,7 +71,7 @@
 // 20 10
 // 21 11
 
-#define REMOTE_PLAY     0x0C
+#define REMOTE_PLAY     0xDD // mini
 #define REMOTE_PAUSE    0x0D
 #define REMOTE_NEXT     0x20
 #define REMOTE_VOLU     0x10
@@ -78,25 +79,17 @@
 #define REMOTE_VOLD     0x11
 
 
-/* IP addresses of Arduino and ZonePlayer */
-#define IP1     192
-#define IP2     168
-#define IP3     1
-#define IP4ZP   132 /* Office */
-#define IP4ARD  141 /* Arduino */
 
 /* Enable DEBUG for serial debug output */
 //
-//#define DEBUG
+#define DEBUG
 
 /*----------------------------------------------------------------------*/
 /* Global variables */
 /*----------------------------------------------------------------------*/
 
 /* IP address of ZonePlayer to control */
-byte sonosip[] = {
-	IP1, IP2, IP3, IP4ZP
-};
+IPAddress stue(192, 168,2,192);
 
 /* Millisecond timer values */
 unsigned long   lastcmd = 0;
@@ -127,7 +120,7 @@ IRrecv          irrecv(IR_PIN);
 decode_results  results;
 
 /* Ethernet control */
-Client          client(sonosip, 1400);
+EthernetClient          client;
 
 /*----------------------------------------------------------------------*/
 /* Function defintions */
@@ -140,12 +133,11 @@ void
 setup()
 {
 	uint8_t         mac[6] = {0xBE, 0xEF, 0xEE, 0x00, 0x20, 0x09};
-	uint8_t         ip[4] = {IP1, IP2, IP3, IP4ARD};
 
 	delay(3000);
 
 	/* initialise Ethernet connection */
-	Ethernet.begin(mac, ip);
+	Ethernet.begin(mac);
 
 	/* initialise IR receiver */
 	irrecv.enableIRIn();
@@ -402,6 +394,7 @@ out(const char *s)
 	client.println(s);
 #ifdef DEBUG
 	Serial.println(s);
+Serial.flush();
 #endif
 }
 
@@ -423,11 +416,16 @@ sonos(int cmd, char *resp1, char *resp2)
 	unsigned long   timeout;
 
 	extra[0] = 0;
-	strcpy(service, "AVTransport");
-
-	if (client.connect()) {
+	PString pservice(service, sizeof(service));
+        pservice.print("AVTransport");
+        PString pextra(extra, sizeof(extra)) ;
+        PString pcmdbuf(cmdbuf, sizeof(cmdbuf)) ;
+        PString pbuf(buf, sizeof(buf));
+        
+	if (client.connect(stue,1400)) {
 #ifdef DEBUG
 		Serial.println("connected");
+Serial.flush();
 #endif
 
 		/*
@@ -436,25 +434,32 @@ sonos(int cmd, char *resp1, char *resp2)
 		 */
 		switch (cmd) {
 		case SONOS_PLAY:
-			strcpy(cmdbuf, "Play");
-			strcpy(extra, "<Speed>1</Speed>");
+			pcmdbuf.print("Play");
+			pextra.print("<Speed>1</Speed>");
 			break;
 
 		case SONOS_PAUSE:
-			strcpy(cmdbuf, "Pause");
+			pcmdbuf.print("Pause");
 			break;
 
 		case SONOS_PREV:
-			strcpy(cmdbuf, "Previous");
+			pcmdbuf.print("Previous");
 			break;
 
 		case SONOS_NEXT:
-			strcpy(cmdbuf, "Next");
+			pcmdbuf.print("Next");
 			break;
 
 		case SONOS_SEEK:
-			strcpy(cmdbuf, "Seek");
-			sprintf(extra, "<Unit>REL_TIME</Unit><Target>%02d:%02d:%02d</Target>", desttime / 3600, (desttime / 60) % 60, desttime % 60);
+			pcmdbuf.print("Seek");
+			pextra.print("<Unit>REL_TIME</Unit><Target>");
+                        // %02d:%02d:%02d , desttime / 3600, (desttime / 60) % 60, desttime % 60);
+                        pextra.print(desttime/3600);
+                        pextra.print(":");
+                        pextra.print((desttime/60) % 60);
+                        pextra.print(":");
+                        pextra.print(desttime % 60);
+                        pextra.print("</Target>");
 			break;
 
 		case SONOS_NORMAL:
@@ -462,56 +467,97 @@ sonos(int cmd, char *resp1, char *resp2)
 		case SONOS_SHUFF:
 		case SONOS_SHUREP:
 			if (cmd == SONOS_NORMAL)
-				strcpy(cmdbuf, "NORMAL");
+				pcmdbuf.print("NORMAL");
 			if (cmd == SONOS_REPEAT)
-				strcpy(cmdbuf, "REPEAT_ALL");
+				pcmdbuf.print("REPEAT_ALL");
 			if (cmd == SONOS_SHUFF)
-				strcpy(cmdbuf, "SHUFFLE_NOREPEAT");
+				pcmdbuf.print("SHUFFLE_NOREPEAT");
 			if (cmd == SONOS_SHUREP)
-				strcpy(cmdbuf, "SHUFFLE");
-			sprintf(extra, "<NewPlayMode>%s</NewPlayMode>", cmdbuf);
-			strcpy(cmdbuf, "SetPlayMode");
+				pcmdbuf.print("SHUFFLE");
+			pextra.print("<NewPlayMode>");
+                        pextra.print(pcmdbuf);
+                        pextra.print("</NewPlayMode>");
+			pcmdbuf.print("SetPlayMode");
 			break;
 
 		case SONOS_MODE:
-			strcpy(cmdbuf, "GetTransportSettings");
+			pcmdbuf.print("GetTransportSettings");
 			strcpy(resp1, "PlayMode");
 			break;
 
 		case SONOS_POSIT:
-			strcpy(cmdbuf, "GetPositionInfo");
+			pcmdbuf.print("GetPositionInfo");
 			strcpy(resp1, "RelTime");
 			break;
 
 		case SONOS_GETVOL:
-			strcpy(cmdbuf, "GetVolume");
-			strcpy(extra, "<Channel>Master</Channel>");
-			strcpy(service, "RenderingControl");
+			pcmdbuf.print("GetVolume");
+			pextra.print("<Channel>Master</Channel>");
+			pservice.print("RenderingControl");
 			strcpy(resp1, "CurrentVolume");
 			break;
 
 		case SONOS_SETVOL:
-			strcpy(cmdbuf, "SetVolume");
-			sprintf(extra, "<Channel>Master</Channel><DesiredVolume>%d</DesiredVolume>", newvol);
-			strcpy(service, "RenderingControl");
+			pcmdbuf.print("SetVolume");
+			pextra.print("<Channel>Master</Channel><DesiredVolume>");
+                        pextra.print(newvol);
+                        pextra.print("</DesiredVolume>");
+			pservice.print("RenderingControl");
 			break;
 		}
 
 		/* output the command packet */
-		sprintf(buf, "POST /MediaRenderer/%s/Control HTTP/1.1", service);
-		out(buf);
-		out("Connection: close");
-		sprintf(buf, "Host: %d.%d.%d.%d:1400", sonosip[0], sonosip[1], sonosip[2], sonosip[3]);
-		out(buf);
-		sprintf(buf, "Content-Length: %d", 231 + 2 * strlen(cmdbuf) + strlen(extra) + strlen(service));
-		out(buf);
-		out("Content-Type: text/xml; charset=\"utf-8\"");
-		sprintf(buf, "Soapaction: \"urn:schemas-upnp-org:service:%s:1#%s\"", service, cmdbuf);
-		out(buf);
-		out("");
-		sprintf(buf, "%s<u:%s%s%s%s%s</u:%s>%s", SONOS_CMDH, cmdbuf, SONOS_CMDP, service, SONOS_CMDQ, extra, cmdbuf, SONOS_CMDF);
+                pbuf.print("POST /MediaRenderer/");
+                pbuf.print(service);
+                pbuf.print("/Control HTTP/1.1");
 		out(buf);
 
+		out("Connection: close");
+                pbuf.begin();
+                
+		pbuf.print("Host: ");
+                pbuf.print(stue[0]);
+                pbuf.print(".");
+                pbuf.print(stue[0]);
+                pbuf.print(".");
+                pbuf.print(stue[0]);
+                pbuf.print(".");
+                pbuf.print(stue[0]);
+                pbuf.print(":1400");
+
+		out(buf);
+                pbuf.begin();
+		
+                pbuf.print("Content-Length: ");
+                pbuf.print(231 + 2 * pcmdbuf.length() + pextra.length()   + pservice.length());
+		out(buf);
+                pbuf.begin();
+                
+		out("Content-Type: text/xml; charset=\"utf-8\"");
+		pbuf.print("Soapaction: \"urn:schemas-upnp-org:service:");
+                pbuf.print(pservice);
+                pbuf.print(":1#");
+                pbuf.print(pcmdbuf);
+                pbuf.print("\"");
+		out(buf);
+                pbuf.begin();
+		out("");
+		
+                pbuf.print(SONOS_CMDH);
+                pbuf.print("<u:");
+                pbuf.print(pcmdbuf);
+                pbuf.print(SONOS_CMDP);
+                pbuf.print(pservice);
+                pbuf.print(SONOS_CMDQ);
+                pbuf.print(pextra);
+                pbuf.print("</u:");
+                pbuf.print(cmdbuf);
+                pbuf.print(">");
+                pbuf.print(SONOS_CMDF);
+//                %s%s%s</u:%s>%s", SONOS_CMDH, cmdbuf, SONOS_CMDP, service, SONOS_CMDQ, extra, cmdbuf, SONOS_CMDF);
+		out(buf);
+                pbuf.begin();
+                
 		/* wait for a response packet */
 		timeout = millis();
 		while ((!client.available()) && ((millis() - timeout) < 1000));
