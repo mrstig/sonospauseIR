@@ -17,13 +17,14 @@
 #include <Ethernet.h>
 #include <IRremote.h>
 #include <PString.h>
+#include <SPI_VFD.h>
 
 /*----------------------------------------------------------------------*/
 /* Macros and constants */
 /*----------------------------------------------------------------------*/
 
 /* Sonos SOAP command packet skeleton */
-#define SONOS_CMDH "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>"
+#define SONOS_CMDH "<?xml version=\"1.0\" encoding=\"utf-8\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>"
 #define SONOS_CMDP " xmlns:u=\"urn:schemas-upnp-org:service:"
 #define SONOS_CMDQ ":1\"><InstanceID>0</InstanceID>"
 #define SONOS_CMDF "</s:Body></s:Envelope>"
@@ -42,6 +43,7 @@
 #define SONOS_POSIT  10
 #define SONOS_GETVOL 11
 #define SONOS_SETVOL 12
+#define SONOS_TRACK  13
 
 /* State machine for A-B repeat and intro scan functions */
 #define MODE_NORMAL 0
@@ -72,11 +74,13 @@
 // 21 11
 
 #define REMOTE_PLAY     0xDD // mini
-#define REMOTE_PAUSE    0x0D
-#define REMOTE_NEXT     0x20
+#define REMOTE_PAUSE    0x5D // mini pwr
+#define REMOTE_NEXT     0x3D // mini
 #define REMOTE_VOLU     0x10
 #define REMOTE_PREV     0x21
 #define REMOTE_VOLD     0x11
+#define REMOTE_MODE     0x9D // mini
+
 
 
 
@@ -94,23 +98,12 @@ IPAddress stue(192, 168,2,192);
 /* Millisecond timer values */
 unsigned long   lastcmd = 0;
 unsigned long   lastrew = 0;
-unsigned long   lastpoll = 0;
+unsigned long   lasttrackpoll = 0;
 
-/* A-B repeat and intro scan state */
-int             mode;
-
-/* Second timer values used for A-B repeat */
-int             posa, posb;
-
-/* Global used to store number of seconds to seek to in a Sonos command */
-int             desttime;
-
-/* Global used for volume setting */
-int             newvol;
 
 /* Buffers used for Sonos data reception */
-char            data1[20];
-char            data2[20];
+char            data1[100];
+char            data2[100];
 
 /* Global null buffer used to disable data reception */
 char            nullbuf[1] = {0};
@@ -122,9 +115,25 @@ decode_results  results;
 /* Ethernet control */
 EthernetClient          client;
 
+/* display */
+SPI_VFD vfd(2, 3, 4);
+
 /*----------------------------------------------------------------------*/
 /* Function defintions */
 /*----------------------------------------------------------------------*/
+
+
+uint8_t * heapptr, * stackptr;
+void check_mem() {
+#ifdef DEBUG 
+stackptr = (uint8_t *)malloc(4);          // use stackptr temporarily
+  heapptr = stackptr;                     // save value of heap pointer
+  free(stackptr);      // free up the memory again (sets stackptr to 0)
+  stackptr =  (uint8_t *)(SP);           // save value of stack pointer
+  Serial.print("m: ");
+  Serial.println(stackptr - heapptr);
+#endif
+}
 
 /*----------------------------------------------------------------------*/
 /* setup - configures Arduino */
@@ -141,9 +150,16 @@ setup()
 
 	/* initialise IR receiver */
 	irrecv.enableIRIn();
+      
 
-	/* disable intro scan and A-B repeat */
-	mode = MODE_NORMAL;
+
+        vfd.begin(20, 2);
+        for (byte thisByte = 0; thisByte < 4; thisByte++) {
+          // print the value of each byte of the IP address:
+          vfd.print(Ethernet.localIP()[thisByte], DEC);
+          if ( thisByte < 3 ) vfd.print("."); 
+        }        
+      //vfd.autoscroll();
 
 #ifdef DEBUG
 	Serial.begin(9600);
@@ -158,10 +174,25 @@ loop()
 {
 	int             res;
 
+  if ( millis() > lasttrackpoll + 15000) {
+      vfd.setCursor(0, 1);
+      vfd.print("Fetching track");      
+     sonos(SONOS_TRACK, data1, nullbuf);
+     vfd.clear();
+      vfd.setCursor(0, 0);
+      vfd.print(data1);
+#ifdef DEBUG
+ Serial.println(data1);
+#endif
+      lasttrackpoll = millis();
+  }
+
 	/* look to see if a packet has been received from the IR receiver */
 	if (irrecv.decode(&results)) {
 #ifdef DEBUG
 		Serial.println(results.value, HEX);
+check_mem();
+Serial.flush();
 #endif
 
 		/*
@@ -171,188 +202,44 @@ loop()
 		if (millis() > (lastcmd + 200)) {
 			/* compare received IR against known commands */
 			switch (results.value & 0xFF) {
-			case REMOTE_SCAN:
-				if (mode == MODE_SCAN)
-					mode = MODE_NORMAL;
-				else {
-					mode = MODE_SCAN;
-					sonos(SONOS_POSIT, data1, nullbuf);
-					if (seconds(data1 + 1) > 10)
-						sonos(SONOS_NEXT, nullbuf, nullbuf);
-				}
-				break;
-
-			case REMOTE_AB:
-				if (mode == MODE_AB)
-					mode = MODE_NORMAL;
-				else if (mode == MODE_A) {
-					mode = MODE_AB;
-					sonos(SONOS_POSIT, data1, nullbuf);
-					posb = seconds(data1 + 1);
-				} else {
-					mode = MODE_A;
-					sonos(SONOS_POSIT, data1, nullbuf);
-					posa = seconds(data1 + 1);
-				}
-				break;
 
 			case REMOTE_PLAY:
-				mode = MODE_NORMAL;
+                                vfd.setCursor(0, 1);
+                                vfd.print("Play          ");
 				sonos(SONOS_PLAY, nullbuf, nullbuf);
 				break;
 
 			case REMOTE_PAUSE:
-				mode = MODE_NORMAL;
+                                vfd.setCursor(0, 1);
+                                vfd.print("Pause         ");
 				sonos(SONOS_PAUSE, nullbuf, nullbuf);
 				break;
 
 			case REMOTE_NEXT:
-				mode = MODE_NORMAL;
+                                vfd.setCursor(0, 1);
+                                vfd.print("Next          ");
 				sonos(SONOS_NEXT, nullbuf, nullbuf);
 				break;
 
 			case REMOTE_PREV:
-				mode = MODE_NORMAL;
-				if (millis() > lastrew + 2000) {
-					desttime = 0;
-					sonos(SONOS_SEEK, nullbuf, nullbuf);
-				} else
-					sonos(SONOS_PREV, nullbuf, nullbuf);
-				lastrew = millis();
+                  		sonos(SONOS_PREV, nullbuf, nullbuf);
 				break;
 
-			case REMOTE_SHUFFLE:
-				mode = MODE_NORMAL;
-				sonos(SONOS_MODE, data1, nullbuf);
-				res = sum_letters(data1 + 1);
-				if (res == 457)
-					sonos(SONOS_SHUFF, nullbuf, nullbuf);
-				//NORMAL
-					if (res == 525)
-					sonos(SONOS_REPEAT, nullbuf, nullbuf);
-				//SHUFFLE
-					if (res == 761)
-					sonos(SONOS_SHUREP, nullbuf, nullbuf);
-				//REPEAT_ALL
-					if (res == 1226)
-					sonos(SONOS_NORMAL, nullbuf, nullbuf);
-				//SHUFFLE_NOREPEAT
-					break;
-
-			case REMOTE_REPEAT:
-				mode = MODE_NORMAL;
-				sonos(SONOS_MODE, data1, nullbuf);
-				res = sum_letters(data1 + 1);
-				if (res == 457)
-					sonos(SONOS_REPEAT, nullbuf, nullbuf);
-				//NORMAL
-					if (res == 525)
-					sonos(SONOS_SHUFF, nullbuf, nullbuf);
-				//SHUFFLE
-					if (res == 761)
-					sonos(SONOS_NORMAL, nullbuf, nullbuf);
-				//REPEAT_ALL
-					if (res == 1226)
-					sonos(SONOS_SHUREP, nullbuf, nullbuf);
-				//SHUFFLE_NOREPEAT
-					break;
-
-			case REMOTE_REV:
-				mode = MODE_NORMAL;
-				sonos(SONOS_POSIT, data1, nullbuf);
-				res = seconds(data1 + 1);
-				res -= 10;
-				if (res > 0) {
-					desttime = res;
-					sonos(SONOS_SEEK, nullbuf, nullbuf);
-				}
+			case REMOTE_MODE:
+                  		sonos(SONOS_POSIT, data1, nullbuf);
+                                vfd.setCursor(0, 1);
+                                vfd.print("Posit: ");
+                                vfd.print(data1);
 				break;
-
-			case REMOTE_FWD:
-				mode = MODE_NORMAL;
-				strcpy(data2, "TrackDuration");
-				sonos(SONOS_POSIT, data1, data2);
-				res = seconds(data1 + 1);
-				res += 10;
-				if (res < seconds(data2 + 1)) {
-					desttime = res;
-					sonos(SONOS_SEEK, nullbuf, nullbuf);
-				}
-				break;
-
-			case REMOTE_VOLU:
-				sonos(SONOS_GETVOL, data1, nullbuf);
-				sscanf(data1 + 1, "%d", &newvol);
-				newvol += 5;
-				if (newvol > 100)
-					newvol = 100;
-				sonos(SONOS_SETVOL, nullbuf, nullbuf);
-				break;
-
-			case REMOTE_VOLD:
-				sonos(SONOS_GETVOL, data1, nullbuf);
-				sscanf(data1 + 1, "%d", &newvol);
-				newvol -= 5;
-				if (newvol < 0)
-					newvol = 0;
-				sonos(SONOS_SETVOL, nullbuf, nullbuf);
-				break;
-			}
 
 			/* store time at which last IR command was processed */
 			lastcmd = millis();
+                        }
 		}
 		/* get ready to receive next IR command */
 		irrecv.resume();
 	}
-	/* processing for intro scan and A-B repeat modes */
-	if (mode != MODE_NORMAL) {
-		/*
-		 * if in intro scan or A-B, poll the current playback
-		 * position every 0.5s
-		 */
-		if (millis() > lastpoll + 500) {
-			sonos(SONOS_POSIT, data1, nullbuf);
-			res = seconds(data1 + 1);
-			if (mode == MODE_SCAN) {
-				/*
-				 * intro scan - if current time is greater
-				 * than 10 seconds, skip forward
-				 */
-				if (res >= 10) {
-					strcpy(data1, "fault");
-					sonos(SONOS_NEXT, data1, nullbuf);
 
-					/*
-					 * if skip returned an error, at end
-					 * of playlist - cancel scan
-					 */
-					if (data1[0] != 'f')
-						mode = MODE_NORMAL;
-				}
-			}
-			if (mode == MODE_AB) {
-				/*
-				 * A-B repeat - if current time is greater
-				 * than end time, skip to start time
-				 */
-				if (res >= posb) {
-					desttime = posa;
-					sonos(SONOS_SEEK, nullbuf, nullbuf);
-				}
-			}
-			if (mode == MODE_A) {
-				/*
-				 * A pressed - waiting for B - abort if track
-				 * end reached
-				 */
-				if (res < posa)
-					mode = MODE_NORMAL;
-			}
-			/* update playback position timer */
-			lastpoll = millis();
-		}
-	}
 }
 
 /*----------------------------------------------------------------------*/
@@ -370,20 +257,7 @@ seconds(char *str)
 	return hrs;
 }
 
-/*----------------------------------------------------------------------*/
-/* sum_letters - adds ASCII codes for all letters in supplied string */
 
-int 
-sum_letters(char *str)
-{
-	int             tot = 0;
-	char           *ptr = str;
-	while (*ptr) {
-		tot += *ptr;
-		ptr++;
-	}
-	return tot;
-}
 
 /*----------------------------------------------------------------------*/
 /* out - outputs supplied string to Ethernet client */
@@ -391,12 +265,17 @@ sum_letters(char *str)
 void 
 out(const char *s)
 {
-	client.println(s);
+//  while(client.free() == 0 )
+//    delay(5);
+	client.print(s);
+//        client.print("\n");
 #ifdef DEBUG
-	Serial.println(s);
-Serial.flush();
+	Serial.print(s);
+//Serial.flush();
 #endif
 }
+
+
 
 /*----------------------------------------------------------------------*/
 /* sonos - sends a command packet to the ZonePlayer */
@@ -405,7 +284,7 @@ void
 sonos(int cmd, char *resp1, char *resp2)
 {
 	//char          buf[512];
-	char            buf[350];
+	char            buf[120];
 	char            cmdbuf[32];
 	char            extra[64];
 	char            service[20];
@@ -422,11 +301,7 @@ sonos(int cmd, char *resp1, char *resp2)
         PString pcmdbuf(cmdbuf, sizeof(cmdbuf)) ;
         PString pbuf(buf, sizeof(buf));
         
-	if (client.connect(stue,1400)) {
-#ifdef DEBUG
-		Serial.println("connected");
-Serial.flush();
-#endif
+
 
 		/*
 		 * prepare the data strings to go into the desired command
@@ -450,35 +325,6 @@ Serial.flush();
 			pcmdbuf.print("Next");
 			break;
 
-		case SONOS_SEEK:
-			pcmdbuf.print("Seek");
-			pextra.print("<Unit>REL_TIME</Unit><Target>");
-                        // %02d:%02d:%02d , desttime / 3600, (desttime / 60) % 60, desttime % 60);
-                        pextra.print(desttime/3600);
-                        pextra.print(":");
-                        pextra.print((desttime/60) % 60);
-                        pextra.print(":");
-                        pextra.print(desttime % 60);
-                        pextra.print("</Target>");
-			break;
-
-		case SONOS_NORMAL:
-		case SONOS_REPEAT:
-		case SONOS_SHUFF:
-		case SONOS_SHUREP:
-			if (cmd == SONOS_NORMAL)
-				pcmdbuf.print("NORMAL");
-			if (cmd == SONOS_REPEAT)
-				pcmdbuf.print("REPEAT_ALL");
-			if (cmd == SONOS_SHUFF)
-				pcmdbuf.print("SHUFFLE_NOREPEAT");
-			if (cmd == SONOS_SHUREP)
-				pcmdbuf.print("SHUFFLE");
-			pextra.print("<NewPlayMode>");
-                        pextra.print(pcmdbuf);
-                        pextra.print("</NewPlayMode>");
-			pcmdbuf.print("SetPlayMode");
-			break;
 
 		case SONOS_MODE:
 			pcmdbuf.print("GetTransportSettings");
@@ -490,72 +336,102 @@ Serial.flush();
 			strcpy(resp1, "RelTime");
 			break;
 
-		case SONOS_GETVOL:
-			pcmdbuf.print("GetVolume");
-			pextra.print("<Channel>Master</Channel>");
-			pservice.print("RenderingControl");
-			strcpy(resp1, "CurrentVolume");
+		case SONOS_TRACK:
+			pcmdbuf.print("GetPositionInfo");
+			strcpy(resp1, "dc:title&gt;");
 			break;
 
-		case SONOS_SETVOL:
-			pcmdbuf.print("SetVolume");
-			pextra.print("<Channel>Master</Channel><DesiredVolume>");
-                        pextra.print(newvol);
-                        pextra.print("</DesiredVolume>");
-			pservice.print("RenderingControl");
-			break;
+
 		}
+#ifdef DEBUG
+check_mem();
+Serial.flush();
+#endif
+//if ( cmd == SONOS_PLAY )return;
+	if (client.connect(stue,1400)) {
+//            delay(1200);
+#ifdef DEBUG
+		Serial.println("connected");
+check_mem();
+Serial.flush();
 
+#endif
 		/* output the command packet */
                 pbuf.print("POST /MediaRenderer/");
                 pbuf.print(service);
-                pbuf.print("/Control HTTP/1.1");
+                pbuf.print("/Control HTTP/1.1\r\n");
 		out(buf);
-
-		out("Connection: close");
+#ifdef DEBUG
+                if ( client.getWriteError() > 0 )
+                  Serial.println("grr" + client.getWriteError());
+#endif                 
+		out("Connection: close\r\n");
+#ifdef DEBUG
+                if ( client.getWriteError() > 0 )
+                  Serial.println("grraaae"  + client.getWriteError());
+#endif                 
                 pbuf.begin();
                 
 		pbuf.print("Host: ");
                 pbuf.print(stue[0]);
                 pbuf.print(".");
-                pbuf.print(stue[0]);
+                pbuf.print(stue[1]);
                 pbuf.print(".");
-                pbuf.print(stue[0]);
+                pbuf.print(stue[2]);
                 pbuf.print(".");
-                pbuf.print(stue[0]);
-                pbuf.print(":1400");
+                pbuf.print(stue[3]);
+                pbuf.print(":1400\r\n");
 
 		out(buf);
                 pbuf.begin();
 		
                 pbuf.print("Content-Length: ");
-                pbuf.print(231 + 2 * pcmdbuf.length() + pextra.length()   + pservice.length());
+                pbuf.print(269 + 2 * pcmdbuf.length() + pextra.length()   + pservice.length());
+                pbuf.print("\r\n");
 		out(buf);
                 pbuf.begin();
                 
-		out("Content-Type: text/xml; charset=\"utf-8\"");
-		pbuf.print("Soapaction: \"urn:schemas-upnp-org:service:");
+		out("Content-Type: text/xml; charset=\"utf-8\"\r\n");
+		pbuf.print("SOAPAction: \"urn:schemas-upnp-org:service:");
                 pbuf.print(pservice);
                 pbuf.print(":1#");
                 pbuf.print(pcmdbuf);
-                pbuf.print("\"");
+                pbuf.print("\"\r\n");
 		out(buf);
                 pbuf.begin();
-		out("");
-		
-                pbuf.print(SONOS_CMDH);
-                pbuf.print("<u:");
-                pbuf.print(pcmdbuf);
-                pbuf.print(SONOS_CMDP);
-                pbuf.print(pservice);
-                pbuf.print(SONOS_CMDQ);
-                pbuf.print(pextra);
-                pbuf.print("</u:");
-                pbuf.print(cmdbuf);
-                pbuf.print(">");
-                pbuf.print(SONOS_CMDF);
+		out("\r\n");
+#ifdef DEBUG
+                Serial.println();
+#endif		
+                client.print(SONOS_CMDH);
+                client.print("<u:");
+                client.print(cmdbuf);
+                client.print(SONOS_CMDP);
+                client.print(service);
+                client.print(SONOS_CMDQ);
+                client.print(extra);
+                client.print("</u:");
+                client.print(cmdbuf);
+                client.print(">");
+                client.print(SONOS_CMDF);
+                client.print("\r\n");
+                
+#ifdef DEBUG                
+                Serial.print(SONOS_CMDH);
+                Serial.print("<u:");
+                Serial.print(cmdbuf);
+                Serial.print(SONOS_CMDP);
+                Serial.print(service);
+                Serial.print(SONOS_CMDQ);
+                Serial.print(extra);
+                Serial.print("</u:");
+                Serial.print(cmdbuf);
+                Serial.print(">");
+                Serial.print(SONOS_CMDF);                
+#endif
+
 //                %s%s%s</u:%s>%s", SONOS_CMDH, cmdbuf, SONOS_CMDP, service, SONOS_CMDQ, extra, cmdbuf, SONOS_CMDF);
-		out(buf);
+//		out(buf);
                 pbuf.begin();
                 
 		/* wait for a response packet */
@@ -566,12 +442,22 @@ Serial.flush();
 		 * parse the response looking for the strings in resp1 and
 		 * resp2
 		 */
+#ifdef DEBUG
+                Serial.println("Parsing resp");                
+#endif                
+
 		ptr1 = resp1;
 		ptr2 = resp2;
+optr= resp1; //warnig away
 		copying = 0;
+                int copycount = 0;
+                int inEntity = 0;
 		while (client.available()) {
 			char            c = client.read();
-
+#ifdef DEBUG
+			Serial.print(c);
+//Serial.println("fdsfds");
+#endif
 			/*
 			 * if response buffers start with nulls, either no
 			 * response required, or already received
@@ -586,14 +472,29 @@ Serial.flush();
 					 * look for the < character that
 					 * indicates the end of the data
 					 */
-					if (c == '<') {
+#ifdef LOWDEBUG
+if (c == ';' && copycount > 3) {
+  Serial.print(*(optr-1));
+  Serial.print(':');
+  Serial.print(*(optr-2));
+  Serial.print(':');
+  Serial.println(*(optr-3));
+}
+#endif
+					if ( copycount >= 99 ||
+                                             c == '<' ||
+                                            (c == ';' && copycount > 3 && *(optr-1) == 't' && *(optr-2) == 'l' && *(optr-3) == '&')
+                                                ) {
 						/*
 						 * stop receiving data, and
 						 * null the first character
 						 * in the response buffer
 						 */
 						copying = 0;
-						*optr = 0;
+                                                if ( c=='<' )
+    						  *optr = 0;
+                                                else
+                                                  *(optr-3) = 0;
 						if (copying == 1)
 							resp1[0] = 0;
 						else
@@ -605,6 +506,7 @@ Serial.flush();
 						 */
 						*optr = c;
 						optr++;
+                                                copycount++;
 					}
 				} else {
 					/*
@@ -653,16 +555,19 @@ Serial.flush();
 						ptr2 = resp2;
 				}
 			}
-#ifdef DEBUG
-			Serial.print(c);
-#endif
+
 		}
 	} else {
 #ifdef DEBUG
-		Serial.println("connection failed");
+		Serial.println("cfail");
 #endif
 	}
+delay(200);
 	client.stop();
+#ifdef DEBUG
+        Serial.println("bye");
+#endif        
+
 }
 
 /* End of file */
