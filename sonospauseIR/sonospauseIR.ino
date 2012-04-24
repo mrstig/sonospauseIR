@@ -18,16 +18,21 @@
 #include <IRremote.h>
 #include <PString.h>
 #include <SPI_VFD.h>
+#include <Flash.h>
 
 /*----------------------------------------------------------------------*/
 /* Macros and constants */
 /*----------------------------------------------------------------------*/
 
 /* Sonos SOAP command packet skeleton */
-#define SONOS_CMDH "<?xml version=\"1.0\" encoding=\"utf-8\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>"
-#define SONOS_CMDP " xmlns:u=\"urn:schemas-upnp-org:service:"
-#define SONOS_CMDQ ":1\"><InstanceID>0</InstanceID>"
-#define SONOS_CMDF "</s:Body></s:Envelope>"
+FLASH_STRING(sonos_cmdh, "<?xml version=\"1.0\" encoding=\"utf-8\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>");
+FLASH_STRING(sonos_cmdp, " xmlns:u=\"urn:schemas-upnp-org:service:");
+FLASH_STRING(sonos_cmdq, ":1\"><InstanceID>0</InstanceID>");
+FLASH_STRING(sonos_cmdf, "</s:Body></s:Envelope>");
+
+// see FSM.java
+const char* fsm = "\x26\x3c\x0\x61\x18\x0\x6d\x9\x0\x70\x0\x0\x3b\x0\x26\x70\x0\x0\x6f\x0\x0\x73\x0\x0\x3b\x0\x27\x67\x9\x0\x74\x0\x0\x3b\x0\x3e\x6c\x9\x0\x74\x0\x0\x3b\x0\x3c\x71\x0\x0\x75\x0\x0\x6f\x0\x0\x74\x0\x0\x3b\x0\x22\xc3\x0\x0\x84\x3\x41\x85\x3\x41\x86\x3\x41\x96\x3\x4f\x98\x3\x4f\xa4\x3\x61\xa5\x3\x61\xa6\x3\x61\xb6\x3\x6f\xb8\x0\x6f";
+
 
 /* Sonos SOAP command packet enumeration */
 #define SONOS_PAUSE  0
@@ -86,7 +91,7 @@
 
 /* Enable DEBUG for serial debug output */
 //
-#define DEBUG
+//#define DEBUG
 
 /*----------------------------------------------------------------------*/
 /* Global variables */
@@ -98,12 +103,12 @@ IPAddress stue(192, 168,2,192);
 /* Millisecond timer values */
 unsigned long   lastcmd = 0;
 unsigned long   lastrew = 0;
-unsigned long   lasttrackpoll = 0;
+unsigned long   lasttrackpoll =  0;
 
-
+#define MAX_DATA 40
 /* Buffers used for Sonos data reception */
-char            data1[100];
-char            data2[100];
+char            data1[MAX_DATA];
+char            data2[MAX_DATA];
 
 /* Global null buffer used to disable data reception */
 char            nullbuf[1] = {0};
@@ -159,7 +164,7 @@ setup()
           vfd.print(Ethernet.localIP()[thisByte], DEC);
           if ( thisByte < 3 ) vfd.print("."); 
         }        
-      //vfd.autoscroll();
+     //vfd.autoscroll();
 
 #ifdef DEBUG
 	Serial.begin(9600);
@@ -172,17 +177,20 @@ setup()
 void 
 loop()
 {
-	int             res;
+	//int             res;
 
-  if ( millis() > lasttrackpoll + 15000) {
-      vfd.setCursor(0, 1);
-      vfd.print("Fetching track");      
-     sonos(SONOS_TRACK, data1, nullbuf);
+  if ( millis() > lasttrackpoll + 1000) {
+//      vfd.setCursor(0, 1);
+//      vfd.print("Fetching track      ");      
+     sonos(SONOS_TRACK, data1, data2);
      vfd.clear();
       vfd.setCursor(0, 0);
       vfd.print(data1);
+      vfd.setCursor(0, 1);
+      vfd.print(data2);
 #ifdef DEBUG
  Serial.println(data1);
+ Serial.println(data2);
 #endif
       lasttrackpoll = millis();
   }
@@ -338,7 +346,8 @@ sonos(int cmd, char *resp1, char *resp2)
 
 		case SONOS_TRACK:
 			pcmdbuf.print("GetPositionInfo");
-			strcpy(resp1, "dc:title&gt;");
+			strcpy(resp1, "dc:title>");
+			strcpy(resp2, "dc:creator>");
 			break;
 
 
@@ -403,31 +412,10 @@ Serial.flush();
 #ifdef DEBUG
                 Serial.println();
 #endif		
-                client.print(SONOS_CMDH);
-                client.print("<u:");
-                client.print(cmdbuf);
-                client.print(SONOS_CMDP);
-                client.print(service);
-                client.print(SONOS_CMDQ);
-                client.print(extra);
-                client.print("</u:");
-                client.print(cmdbuf);
-                client.print(">");
-                client.print(SONOS_CMDF);
-                client.print("\r\n");
+                client << sonos_cmdh << "<u:" << cmdbuf << sonos_cmdp << service << sonos_cmdq << extra << "</u:" << cmdbuf << ">" << sonos_cmdf << "\r\n";
                 
 #ifdef DEBUG                
-                Serial.print(SONOS_CMDH);
-                Serial.print("<u:");
-                Serial.print(cmdbuf);
-                Serial.print(SONOS_CMDP);
-                Serial.print(service);
-                Serial.print(SONOS_CMDQ);
-                Serial.print(extra);
-                Serial.print("</u:");
-                Serial.print(cmdbuf);
-                Serial.print(">");
-                Serial.print(SONOS_CMDF);                
+                Serial << sonos_cmdh << "<u:" << cmdbuf << sonos_cmdp << service << sonos_cmdq << extra << "</u:" << cmdbuf << ">" << sonos_cmdf << "\r\n";               
 #endif
 
 //                %s%s%s</u:%s>%s", SONOS_CMDH, cmdbuf, SONOS_CMDP, service, SONOS_CMDQ, extra, cmdbuf, SONOS_CMDF);
@@ -448,16 +436,46 @@ Serial.flush();
 
 		ptr1 = resp1;
 		ptr2 = resp2;
-optr= resp1; //warnig away
+                optr = resp1; //warning away
 		copying = 0;
                 int copycount = 0;
-                int inEntity = 0;
+                int st = 0;
+                char amp = 0;
 		while (client.available()) {
 			char            c = client.read();
 #ifdef DEBUG
 			Serial.print(c);
-//Serial.println("fdsfds");
+			//Serial.print(fsm[st]);
 #endif
+
+                      // FSM for parsing and converting &-entities and utf-8 in xml. See FSM.java. 
+                      // Hack to loop back once if an ampersand is found, to allow for doubly encoded entities
+                      while(c != fsm[st] && fsm[st+1] > 0 ) {
+                        st += fsm[st+1];
+                      }
+                       if( fsm[st+2] > 0 ) {
+                        c=fsm[st+2];
+                        st=0;
+                      } else if ( c == fsm[st] ) {
+                        st+=3;  
+                      } else {
+                        if (amp==1)
+                          c = '&';
+                        //else if (st > 0)
+                        //  c = '?';
+                        st = 0;
+                      }
+                      //hack
+                      if (amp == 0 && c == '&' && st != 3 ) {
+                        st = 3;
+                        amp = 1;
+                      }
+                      if(st > 0)
+                         continue; 
+                      amp = 0;  
+            
+Serial.print(c);
+
 			/*
 			 * if response buffers start with nulls, either no
 			 * response required, or already received
@@ -472,33 +490,23 @@ optr= resp1; //warnig away
 					 * look for the < character that
 					 * indicates the end of the data
 					 */
-#ifdef LOWDEBUG
-if (c == ';' && copycount > 3) {
-  Serial.print(*(optr-1));
-  Serial.print(':');
-  Serial.print(*(optr-2));
-  Serial.print(':');
-  Serial.println(*(optr-3));
-}
-#endif
-					if ( copycount >= 99 ||
-                                             c == '<' ||
-                                            (c == ';' && copycount > 3 && *(optr-1) == 't' && *(optr-2) == 'l' && *(optr-3) == '&')
-                                                ) {
+					if ( copycount >= MAX_DATA-1 ||
+                                             c == '<' )
+                                                 
+                                                {
 						/*
 						 * stop receiving data, and
 						 * null the first character
 						 * in the response buffer
 						 */
+						//if (copying == 1)
+						//	resp1[0] = 0;
+						//else
+						//	resp2[0] = 0;
 						copying = 0;
-                                                if ( c=='<' )
     						  *optr = 0;
-                                                else
-                                                  *(optr-3) = 0;
-						if (copying == 1)
-							resp1[0] = 0;
-						else
-							resp2[0] = 0;
+
+                                                  copycount = 0;
 					} else {
 						/*
 						 * copy the next byte to the
