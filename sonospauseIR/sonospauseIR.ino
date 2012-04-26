@@ -104,11 +104,15 @@ IPAddress stue(192, 168,2,192);
 unsigned long   lastcmd = 0;
 unsigned long   lastrew = 0;
 unsigned long   lasttrackpoll =  0;
+unsigned long   lastscroll =  0;
 
 #define MAX_DATA 40
 /* Buffers used for Sonos data reception */
 char            data1[MAX_DATA];
 char            data2[MAX_DATA];
+
+int data1Chk = 0;
+int data2Chk = 0;
 
 /* Global null buffer used to disable data reception */
 char            nullbuf[1] = {0};
@@ -174,33 +178,60 @@ setup()
 /*----------------------------------------------------------------------*/
 /* loop - called repeatedly by Arduino */
 
+char *pos1, *pos2;
+
 void 
 loop()
 {
 	//int             res;
 
   if ( millis() > lasttrackpoll + 1000) {
-//      vfd.setCursor(0, 1);
-//      vfd.print("Fetching track      ");      
      sonos(SONOS_TRACK, data1, data2);
-     vfd.clear();
-      vfd.setCursor(0, 0);
-      vfd.print(data1);
-      vfd.setCursor(0, 1);
-      vfd.print(data2);
+     if (data1[0] == -1 )
+       strcpy(data1, "<no track>");
+     if (data2[0] == -1 )
+       strcpy(data2, "<no artist>");
+       
+     int d1 = sum_letters(data1);
+     int d2 = sum_letters(data2);
+     if ( d1 != data1Chk || d2 != data2Chk ) {
+        vfd.clear();
+        data1Chk = d1;
+        data2Chk = d2;
+        pos1 = data1; pos2 = data2;
+     }
+      lasttrackpoll = millis();
+ // }
+ // if( millis() > lastscroll + 250 ) {
+    if ( strlen(data1) > 20 ) {
+       if( ++pos1 == data1 - 19 + strlen(data1) )
+         pos1 = data1;
+    }
+    if ( strlen(data2) > 20 ) {
+       if( ++pos2 == data2 - 19 + strlen(data2) )
+         pos2 = data2;
+    }
+    vfd.setCursor(0, 0);
+    vfd.print(pos1);
+    vfd.setCursor(0, 1);
+    vfd.print(pos2);
+    
 #ifdef DEBUG
  Serial.println(data1);
  Serial.println(data2);
-#endif
-      lasttrackpoll = millis();
+ Serial.println(pos1-data1);
+ Serial.println(pos2-data2);
+#endif    
+    lastscroll = millis();
   }
+     
+
 
 	/* look to see if a packet has been received from the IR receiver */
 	if (irrecv.decode(&results)) {
 #ifdef DEBUG
 		Serial.println(results.value, HEX);
 check_mem();
-Serial.flush();
 #endif
 
 		/*
@@ -250,21 +281,17 @@ Serial.flush();
 
 }
 
-/*----------------------------------------------------------------------*/
-/* seconds - converts supplied string in format hh:mm:ss to seconds */
-
 int 
-seconds(char *str)
+sum_letters(char *str)
 {
-	int             hrs, mins, secs;
-	sscanf(str, "%d:%d:%d", &hrs, &mins, &secs);
-	hrs *= 60;
-	hrs += mins;
-	hrs *= 60;
-	hrs += secs;
-	return hrs;
+  int             tot = 0;
+  char           *ptr = str;
+  while (*ptr) {
+    tot += *ptr;
+    ptr++;
+  }
+  return tot;
 }
-
 
 
 /*----------------------------------------------------------------------*/
@@ -441,6 +468,8 @@ Serial.flush();
                 int copycount = 0;
                 int st = 0;
                 char amp = 0;
+                char c1 = resp1[0];
+                char c2 = resp2[0];                
 		while (client.available()) {
 			char            c = client.read();
 #ifdef DEBUG
@@ -473,14 +502,13 @@ Serial.flush();
                       if(st > 0)
                          continue; 
                       amp = 0;  
-            
+#ifdef DEBUG            
 Serial.print(c);
+#endif
 
-			/*
-			 * if response buffers start with nulls, either no
-			 * response required, or already received
-			 */
-			if (resp1[0] || resp2[0]) {
+
+                        
+			if (c1 || c2) {
 				/*
 				 * if a response has been identified, copy
 				 * the data
@@ -501,8 +529,12 @@ Serial.print(c);
 						 */
 						//if (copying == 1)
 						//	resp1[0] = 0;
-						//else
+						//else if( copying == 2)
 						//	resp2[0] = 0;
+						if (copying == 1)
+							c1 = 0;
+						else if( copying == 2)
+							c2 = 0;
 						copying = 0;
     						  *optr = 0;
 
@@ -564,7 +596,13 @@ Serial.print(c);
 				}
 			}
 
+                    // indicate "nothing found"
+
 		}
+                    if (c1 != 0)
+                      resp1[0] = -1;
+                    if ( c2 != 0 )
+                      resp2[0] = -1;
 	} else {
 #ifdef DEBUG
 		Serial.println("cfail");
