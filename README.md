@@ -6,5 +6,7 @@ This is an Arduino sketch to drive a Sonos Zone Player via an InfraRed receiver.
 
 TBD:
 web page for setting sonos ip
+
 upnp for autodetecting sonos ZPs
+
 IR codes autolearning
