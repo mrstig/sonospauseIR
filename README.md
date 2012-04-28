@@ -10,3 +10,8 @@ web page for setting sonos ip
 upnp for autodetecting sonos ZPs
 
 IR codes autolearning
+
+æøåÆØÅäöÂÖ
+
+timer/interrupt for scrolling
+
