@@ -17,29 +17,29 @@ import java.util.Map;
  */
 public class FSM {
 
-    static Map<String, String> ents = new HashMap<String, String>();
+    static Map<String, Integer> ents = new HashMap<String, Integer>();
 
     public static void main(String[] args) throws Exception{
-        ents.put("&amp;", "&");
-        ents.put("&apos;", "'");
-        ents.put("&lt;", "<");
-        ents.put("&gt;", ">");
-        ents.put("&quot;", "\"");
-        ents.put(new String("æ".getBytes("utf-8"), "iso-8859-1"), "a");
-        ents.put(new String("ø".getBytes("utf-8"), "iso-8859-1"), "o");
-        ents.put(new String("å".getBytes("utf-8"), "iso-8859-1"), "a");
-        ents.put(new String("Æ".getBytes("utf-8"), "iso-8859-1"), "A");
-        ents.put(new String("Ø".getBytes("utf-8"), "iso-8859-1"), "O");
-        ents.put(new String("Å".getBytes("utf-8"), "iso-8859-1"), "A");
-        ents.put(new String("ä".getBytes("utf-8"), "iso-8859-1"), "a");
-        ents.put(new String("ö".getBytes("utf-8"), "iso-8859-1"), "o");
-        ents.put(new String("Ä".getBytes("utf-8"), "iso-8859-1"), "A");
-        ents.put(new String("Ö".getBytes("utf-8"), "iso-8859-1"), "O");
+        ents.put("&amp;", (int)"&".getBytes()[0]);
+        ents.put("&apos;", (int)"'".getBytes()[0]);
+        ents.put("&lt;", (int)"<".getBytes()[0]);
+        ents.put("&gt;", (int)">".getBytes()[0]);
+        ents.put("&quot;", (int)"\"".getBytes()[0]);
+        ents.put(new String("æ".getBytes("utf-8"), "iso-8859-1"), 1);
+        ents.put(new String("ø".getBytes("utf-8"), "iso-8859-1"), 2);
+        ents.put(new String("å".getBytes("utf-8"), "iso-8859-1"), 3);
+        ents.put(new String("Æ".getBytes("utf-8"), "iso-8859-1"), 4);
+        ents.put(new String("Ø".getBytes("utf-8"), "iso-8859-1"), 5);
+        ents.put(new String("Å".getBytes("utf-8"), "iso-8859-1"), 6);
+        ents.put(new String("ä".getBytes("utf-8"), "iso-8859-1"), (int)"a".getBytes()[0]);
+        ents.put(new String("ö".getBytes("utf-8"), "iso-8859-1"), (int)"o".getBytes()[0]);
+        ents.put(new String("Ä".getBytes("utf-8"), "iso-8859-1"), (int)"A".getBytes()[0]);
+        ents.put(new String("Ö".getBytes("utf-8"), "iso-8859-1"), (int)"O".getBytes()[0]);
         String t = createCTable(ents);
-        System.out.println("const char* fsm = \"" + t + "\";");
+        System.out.println("FLASH_STRING(fsm, \"" + t + "\");");
     }
 
-    private static String createCTable(Map<String, String> ents) {
+    private static String createCTable(Map<String, Integer> ents) {
         Tree t = new Tree("-");
         for (String key : ents.keySet()) {
             Tree.Node curNode = t.root;
@@ -61,7 +61,8 @@ public class FSM {
                 case 1:
                 case 2:
                     sb.append("\\x" + new BigInteger(""+i).toString(16));// +"\"\"");
-                    //sb.append("(" + i +")");
+//                    if(i > 127)
+//                        sb.append("(" + i +")");
                     break;
             }
            
@@ -90,7 +91,7 @@ public class FSM {
             private String data;
             private Node parent;
             private List<Node> children;
-            private String res;
+            private Integer res;
             
             public String getData() {
                 return data;
@@ -125,11 +126,11 @@ public class FSM {
                 return findChild("" + data);
             }
 
-            public String getRes() {
+            public Integer getRes() {
                 return res;
             }
 
-            public void setRes(String res) {
+            public void setRes(Integer res) {
                 this.res = res;
             }
  
@@ -137,7 +138,7 @@ public class FSM {
                 List<Integer> me = new ArrayList<Integer>();
                 me.add((int)data.charAt(0));
                 me.add(0);
-                me.add(res==null?0:(int)res.charAt(0));
+                me.add(res==null?0:res);
                 int c = 0;
                 for( Node n: children ){
                     List<Integer> ch = n.fill();
