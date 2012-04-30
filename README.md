@@ -4,7 +4,7 @@ This is an Arduino sketch to drive a Sonos Zone Player via an InfraRed receiver.
 
 2012-04-26: current song display on VFD
 
-2012-04-20: NLS for Norway, web page for sonos ip setup
+2012-04-30: NLS for Norway, web page for sonos ip setup
 
 TBD:
 
