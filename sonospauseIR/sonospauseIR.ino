@@ -62,6 +62,7 @@
 /* Enable DEBUG for serial debug output */
 // not enough mem, must modularise
 //#define DEBUG
+//#define SOAPDEBUG
 
 /* Sonos SOAP command packet skeleton */
 
@@ -69,73 +70,16 @@ FLASH_STRING(sonos_cmdh, "<?xml version=\"1.0\" encoding=\"utf-8\"?><s:Envelope 
 FLASH_STRING(sonos_cmdp, " xmlns:u=\"urn:schemas-upnp-org:service:");
 FLASH_STRING(sonos_cmdq, ":1\"><InstanceID>0</InstanceID>");
 FLASH_STRING(sonos_cmdf, "</s:Body></s:Envelope>");
-
-// NLS for Norway
-FLASH_ARRAY(byte, char_aelig_lower, 
-B00000,
-B00000,
-B11110,
-B00101,
-B01111,
-B10100,
-B11111,
-B00000
-);
-FLASH_ARRAY(byte, char_oslash_lower, 
-B00000,
-B00000,
-B01110,
-B10011,
-B10101,
-B11001,
-B01110,
-B00000
-);
-FLASH_ARRAY(byte, char_aring_lower, 
-B00100,
-B01010,
-B01110,
-B00001,
-B01111,
-B10001,
-B01111,
-B00000
-);
-FLASH_ARRAY(byte, char_aelig_upper, 
-B01111,
-B10100,
-B10100,
-B11111,
-B10100,
-B10100,
-B10111,
-B00000
-);
-FLASH_ARRAY(byte, char_oslash_upper, 
-B01110,
-B10001,
-B10011,
-B10101,
-B11001,
-B10001,
-B01110,
-B00000
-);
-FLASH_ARRAY(byte, char_aring_upper, 
-B00100,
-B01010,
-B01110,
-B10001,
-B11111,
-B10001,
-B10001,
-B00000
-);
+FLASH_STRING(post_pre, "POST /MediaRenderer/");
+FLASH_STRING(post_post, "/Control HTTP/1.1\r\n");
+FLASH_STRING(soap_action, "SOAPAction: \"urn:schemas-upnp-org:service:");
+FLASH_STRING(no_track,  "<no track>          ");
+FLASH_STRING(no_artist, "<no artist>         ");
 
 
 
 // see FSM.java
-FLASH_STRING(fsm, "\x26\x3c\x0\x61\x18\x0\x6d\x9\x0\x70\x0\x0\x3b\x0\x26\x70\x0\x0\x6f\x0\x0\x73\x0\x0\x3b\x0\x27\x67\x9\x0\x74\x0\x0\x3b\x0\x3e\x6c\x9\x0\x74\x0\x0\x3b\x0\x3c\x71\x0\x0\x75\x0\x0\x6f\x0\x0\x74\x0\x0\x3b\x0\x22\xc3\x0\x0\x84\x3\x41\x85\x3\x6\x86\x3\x4\x96\x3\x4f\x98\x3\x5\xa4\x3\x61\xa5\x3\x3\xa6\x3\x1\xb6\x3\x6f\xb8\x0\x2");
+FLASH_STRING(fsm, "\x26\x3c\x0\x61\x18\x0\x6d\x9\x0\x70\x0\x0\x3b\x0\x26\x70\x0\x0\x6f\x0\x0\x73\x0\x0\x3b\x0\x27\x67\x9\x0\x74\x0\x0\x3b\x0\x3e\x6c\x9\x0\x74\x0\x0\x3b\x0\x3c\x71\x0\x0\x75\x0\x0\x6f\x0\x0\x74\x0\x0\x3b\x0\x22\xc3\x0\x0\x84\x3\x80\x85\x3\x81\x86\x3\x90\x96\x3\x86\x98\x3\x88\xa4\x3\xe1\xa5\x3\x84\xa6\x3\x91\xb6\x3\xef\xb8\x0\x89");
 
 
 // Web Server
@@ -283,7 +227,7 @@ WebServer webserver("", 80);
 
 uint8_t * heapptr, * stackptr;
 void check_mem() {
-#ifdef DEBUG 
+#if defined DEBUG or defined SOAPDEBUG 
   stackptr = (uint8_t *)malloc(4);          // use stackptr temporarily
   heapptr = stackptr;                     // save value of heap pointer
   free(stackptr);      // free up the memory again (sets stackptr to 0)
@@ -292,13 +236,13 @@ void check_mem() {
 #endif
 }
 
-void
-createChar(int n, _FLASH_ARRAY<byte> data ) {
-  byte createCharBuf[8];     
-  for ( int i = 0; i < 8; i++ )
-    createCharBuf[i] = data[i];
-  vfd.createChar( n, createCharBuf); 
-}
+//void
+//createChar(int n, _FLASH_ARRAY<byte> data ) {
+//  byte createCharBuf[8];     
+//  for ( int i = 0; i < 8; i++ )
+//    createCharBuf[i] = data[i];
+//  vfd.createChar( n, createCharBuf); 
+//}
 
 
 // clear eeprom first...
@@ -354,12 +298,12 @@ setup()
     }              
   }
   delay(2000);
-  createChar(1, char_aelig_lower);
-  createChar(2, char_oslash_lower);
-  createChar(3, char_aring_lower);
-  createChar(4, char_aelig_upper);
-  createChar(5, char_oslash_upper);
-  createChar(6, char_aring_upper);
+//  createChar(1, char_aelig_lower);
+//  createChar(2, char_oslash_lower);
+//  createChar(3, char_aring_lower);
+//  createChar(4, char_aelig_upper);
+//  createChar(5, char_oslash_upper);
+//  createChar(6, char_aring_upper);
 
   webserver.setDefaultCommand(&helloCmd);
 
@@ -370,6 +314,13 @@ setup()
   webserver.begin();
 
 
+#ifdef SOAPDEBUG
+//delay(5000);
+  Serial.begin(9600);
+//  check_mem();
+  Serial.flush();
+
+#endif
 #ifdef DEBUG
   Serial.begin(9600);
   check_mem();
@@ -386,7 +337,7 @@ char *pos1, *pos2;
 void 
 loop()
 {
-  // must hav valid ip
+  // must have valid ip
   if ( valid != 0 ) {
     // poll song name/artist every second
     if ( millis() > lasttrackpoll + 1000) {
@@ -512,10 +463,11 @@ void
 out(const char *s)
 {
   client.print(s);
-#ifdef DEBUG
+#ifdef SOAPDEBUG
   Serial.print(s);
 #endif
 }
+
 
 
 
@@ -581,7 +533,8 @@ sonos(int cmd, char *resp1, char *resp2)
 
   }
 
-  if (client.connect(zp,1400)) {
+  int connRes = 0;
+  if (connRes = client.connect(zp,1400)) {
 #ifdef DEBUG
     Serial.println("connected");
     check_mem();
@@ -589,9 +542,7 @@ sonos(int cmd, char *resp1, char *resp2)
 
 #endif
     /* output the command packet */
-    pbuf.print("POST /MediaRenderer/");
-    pbuf.print(service);
-    pbuf.print("/Control HTTP/1.1\r\n");
+    pbuf << post_pre <<  service << post_post;
     out(buf);
 
     out("Connection: close\r\n");
@@ -618,20 +569,14 @@ sonos(int cmd, char *resp1, char *resp2)
     pbuf.begin();
 
     out("Content-Type: text/xml; charset=\"utf-8\"\r\n");
-    pbuf.print("SOAPAction: \"urn:schemas-upnp-org:service:");
-    pbuf.print(pservice);
-    pbuf.print(":1#");
-    pbuf.print(pcmdbuf);
-    pbuf.print("\"\r\n");
+    pbuf << soap_action<<pservice<<":1#"<<pcmdbuf<<"\"\r\n";
     out(buf);
     pbuf.begin();
     out("\r\n");
-#ifdef DEBUG
-    Serial.println();
-#endif		
+	
     client << sonos_cmdh << "<u:" << cmdbuf << sonos_cmdp << service << sonos_cmdq << extra << "</u:" << cmdbuf << ">" << sonos_cmdf << "\r\n";
 
-#ifdef DEBUG                
+#ifdef SOAPDEBUG                
     Serial << sonos_cmdh << "<u:" << cmdbuf << sonos_cmdp << service << sonos_cmdq << extra << "</u:" << cmdbuf << ">" << sonos_cmdf << "\r\n";               
 #endif
 
@@ -647,9 +592,7 @@ sonos(int cmd, char *resp1, char *resp2)
 		 * parse the response looking for the strings in resp1 and
      		 * resp2
      		 */
-#ifdef DEBUG
-    //                Serial.println("Parsing resp");                
-#endif                
+           
 
     ptr1 = resp1;
     ptr2 = resp2;
@@ -660,10 +603,9 @@ sonos(int cmd, char *resp1, char *resp2)
     char amp = 0;
     char c1 = resp1[0];
     char c2 = resp2[0];
-    int custChar = 1;             
     while (client.available()) {
       char            c = client.read();
-#ifdef DEBUG
+#ifdef SOAPDEBUG
       Serial.print(c);
       //Serial.print(fsm[st]);
 #endif
@@ -673,7 +615,7 @@ sonos(int cmd, char *resp1, char *resp2)
       while(c != fsm[st] && fsm[st+1] > 0 ) {
         st += fsm[st+1];
       }
-      if( fsm[st+2] > 0 ) {
+      if( fsm[st+2] != 0 ) {
         c=fsm[st+2];
         st=0;
       } 
@@ -697,7 +639,7 @@ sonos(int cmd, char *resp1, char *resp2)
       amp = 0;  
 
 
-#ifdef DEBUG            
+#ifdef SOAPDEBUG            
       Serial.print(c);
 #endif
 
@@ -802,6 +744,9 @@ sonos(int cmd, char *resp1, char *resp2)
       resp2[0] = -1;
   } 
   else {
+    strcpy(resp1, "Connection error");
+    sprintf(resp2, "code %d", connRes);
+    
 #ifdef DEBUG
     Serial.println("cfail");
 #endif

@@ -25,16 +25,17 @@ public class FSM {
         ents.put("&lt;", (int)"<".getBytes()[0]);
         ents.put("&gt;", (int)">".getBytes()[0]);
         ents.put("&quot;", (int)"\"".getBytes()[0]);
-        ents.put(new String("æ".getBytes("utf-8"), "iso-8859-1"), 1);
-        ents.put(new String("ø".getBytes("utf-8"), "iso-8859-1"), 2);
-        ents.put(new String("å".getBytes("utf-8"), "iso-8859-1"), 3);
-        ents.put(new String("Æ".getBytes("utf-8"), "iso-8859-1"), 4);
-        ents.put(new String("Ø".getBytes("utf-8"), "iso-8859-1"), 5);
-        ents.put(new String("Å".getBytes("utf-8"), "iso-8859-1"), 6);
-        ents.put(new String("ä".getBytes("utf-8"), "iso-8859-1"), (int)"a".getBytes()[0]);
-        ents.put(new String("ö".getBytes("utf-8"), "iso-8859-1"), (int)"o".getBytes()[0]);
-        ents.put(new String("Ä".getBytes("utf-8"), "iso-8859-1"), (int)"A".getBytes()[0]);
-        ents.put(new String("Ö".getBytes("utf-8"), "iso-8859-1"), (int)"O".getBytes()[0]);
+        // VFD-specific character codes
+        ents.put(new String("æ".getBytes("utf-8"), "iso-8859-1"), 0x91);
+        ents.put(new String("ø".getBytes("utf-8"), "iso-8859-1"), 0x89);
+        ents.put(new String("å".getBytes("utf-8"), "iso-8859-1"), 0x84);
+        ents.put(new String("Æ".getBytes("utf-8"), "iso-8859-1"), 0x90);
+        ents.put(new String("Ø".getBytes("utf-8"), "iso-8859-1"), 0x88);
+        ents.put(new String("Å".getBytes("utf-8"), "iso-8859-1"), 0x81);
+        ents.put(new String("ä".getBytes("utf-8"), "iso-8859-1"), 0xe1);
+        ents.put(new String("ö".getBytes("utf-8"), "iso-8859-1"), 0xef);
+        ents.put(new String("Ä".getBytes("utf-8"), "iso-8859-1"), 0x80);
+        ents.put(new String("Ö".getBytes("utf-8"), "iso-8859-1"), 0x86);
         String t = createCTable(ents);
         System.out.println("FLASH_STRING(fsm, \"" + t + "\");");
     }
