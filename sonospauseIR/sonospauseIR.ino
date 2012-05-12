@@ -248,6 +248,8 @@ void check_mem() {
 // clear eeprom first...
 void readEEPROM() {
   valid = EEPROM.read(0);
+  if ( valid == 0xff )
+    valid = 0;
   if ( valid != 0 ) {
     zp[0] = EEPROM.read(1);
     zp[1] = EEPROM.read(2);
