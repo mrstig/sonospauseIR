@@ -50,12 +50,21 @@
 
 /* IRremote hex codes for received remote commands */
 
-#define REMOTE_PLAY     0xDD // mini
-#define REMOTE_PAUSE    0x5D // mini pwr
-#define REMOTE_NEXT     0x3D // mini
-#define REMOTE_PREV     0x21
+//#define REMOTE_PLAY     0xDD // mini
+//#define REMOTE_PAUSE    0x5D // mini pwr
+//#define REMOTE_NEXT     0x3D // mini
+//#define REMOTE_PREV     0x21
 
-
+/* h/k
+play: 616E53AC
+pause: 616ED32C
+next: 616E936C
+prev: 616E13EC
+*/
+#define REMOTE_PLAY     0xAC
+#define REMOTE_PAUSE    0x2C
+#define REMOTE_NEXT     0x6C
+#define REMOTE_PREV     0xEC
 
 
 
@@ -63,6 +72,7 @@
 // not enough mem, must modularise
 //#define DEBUG
 //#define SOAPDEBUG
+//#define FSMDEBUG
 
 /* Sonos SOAP command packet skeleton */
 
@@ -105,6 +115,7 @@ unsigned long   lastscroll =  0;
 /* Buffers used for Sonos data reception */
 char            data1[MAX_DATA];
 char            data2[MAX_DATA];
+char            data3[MAX_DATA];
 
 char            buf[BUFLEN];
 
@@ -265,8 +276,15 @@ void readEEPROM() {
 void 
 setup()
 {
-  uint8_t         mac[6] = {
-    0xBE, 0xEF, 0xEE, 0x00, 0x20, 0x09  };
+#ifdef DEBUG
+  Serial.begin(9600);
+  check_mem();
+  Serial.flush();
+
+#endif
+
+uint8_t         mac[6] = {
+    0xBE, 0xEF, 0xEE, 0x00, 0x20, 0x12  };
 
   delay(1000);
 
@@ -286,8 +304,15 @@ setup()
   for (byte thisByte = 0; thisByte < 4; thisByte++) {
     // print the value of each byte of the IP address:
     vfd.print(Ethernet.localIP()[thisByte], DEC);
+#ifdef DEBUG
+    Serial.print(Ethernet.localIP()[thisByte], DEC);
+    if ( thisByte < 3 ) Serial.print("."); 
+#endif
     if ( thisByte < 3 ) vfd.print("."); 
   }
+#ifdef DEBUG
+    Serial.println();
+#endif
   vfd.setCursor(0,1); 
   vfd.print("-> ");
   if ( valid == 0 )
@@ -296,9 +321,16 @@ setup()
     for (byte thisByte = 0; thisByte < 4; thisByte++) {
       // print the value of each byte of the IP address:
       vfd.print(zp[thisByte], DEC);
+#ifdef DEBUG
+    Serial.print(zp[thisByte], DEC);
+    if ( thisByte < 3 ) Serial.print("."); 
+#endif
       if ( thisByte < 3 ) vfd.print("."); 
     }              
   }
+#ifdef DEBUG
+    Serial.println();
+#endif
   delay(2000);
 //  createChar(1, char_aelig_lower);
 //  createChar(2, char_oslash_lower);
@@ -323,12 +355,7 @@ setup()
   Serial.flush();
 
 #endif
-#ifdef DEBUG
-  Serial.begin(9600);
-  check_mem();
-  Serial.flush();
 
-#endif
 }
 
 /*----------------------------------------------------------------------*/
@@ -343,11 +370,15 @@ loop()
   if ( valid != 0 ) {
     // poll song name/artist every second
     if ( millis() > lasttrackpoll + 1000) {
-      sonos(SONOS_TRACK, data1, data2);
-      if (data1[0] == -1 )
+      sonos(SONOS_TRACK, data1, data2, data3);
+      if (data1[0] != -1 )
         strcpy(data1, "<no track>");
       if (data2[0] == -1 )
         strcpy(data2, "<no artist>");
+      if (data3[0] != -1 ) { // radio hackery
+        strcpy(data1, data3);
+        strcpy(data2, "<radio>");
+      }
 
       int d1 = sum_letters(data1);
       int d2 = sum_letters(data2);
@@ -379,6 +410,7 @@ loop()
 #ifdef DEBUG
       Serial.println(data1);
       Serial.println(data2);
+      Serial.println(data3);
       Serial.println(pos1-data1);
       Serial.println(pos2-data2);
 #endif    
@@ -404,24 +436,24 @@ loop()
 
         case REMOTE_PLAY:
           vfd.setCursor(0, 1);
-          vfd.print("Play          ");
-          sonos(SONOS_PLAY, nullbuf, nullbuf);
+          vfd.print("Play");
+          sonos(SONOS_PLAY, nullbuf, nullbuf, nullbuf);
           break;
 
         case REMOTE_PAUSE:
           vfd.setCursor(0, 1);
-          vfd.print("Pause         ");
-          sonos(SONOS_PAUSE, nullbuf, nullbuf);
+          vfd.print("Pause ");
+          sonos(SONOS_PAUSE, nullbuf, nullbuf, nullbuf);
           break;
 
         case REMOTE_NEXT:
           vfd.setCursor(0, 1);
-          vfd.print("Next          ");
-          sonos(SONOS_NEXT, nullbuf, nullbuf);
+          vfd.print("Next");
+          sonos(SONOS_NEXT, nullbuf, nullbuf, nullbuf);
           break;
 
         case REMOTE_PREV:
-          sonos(SONOS_PREV, nullbuf, nullbuf);
+          sonos(SONOS_PREV, nullbuf, nullbuf, nullbuf);
           break;
 
 //        case REMOTE_MODE:
@@ -477,7 +509,7 @@ out(const char *s)
 /* sonos - sends a command packet to the ZonePlayer */
 
 void 
-sonos(int cmd, char *resp1, char *resp2)
+sonos(int cmd, char *resp1, char *resp2, char* resp3)
 {
   //char          buf[512];
 
@@ -486,6 +518,7 @@ sonos(int cmd, char *resp1, char *resp2)
   char            service[20];
   char           *ptr1;
   char           *ptr2;
+  char           *ptr3;
   char           *optr;
   char            copying;
   unsigned long   timeout;
@@ -521,15 +554,16 @@ sonos(int cmd, char *resp1, char *resp2)
     pcmdbuf.print("Next");
     break;
 
-  case SONOS_POSIT:
-    pcmdbuf.print("GetPositionInfo");
-    strcpy(resp1, "RelTime");
-    break;
+//  case SONOS_POSIT:
+//    pcmdbuf.print("GetPositionInfo");
+//    strcpy(resp1, "RelTime");
+//    break;
 
   case SONOS_TRACK:
     pcmdbuf.print("GetPositionInfo");
     strcpy(resp1, "dc:title>");
     strcpy(resp2, "dc:creator>");
+    strcpy(resp3, "r:streamContent>");
     break;
 
 
@@ -598,6 +632,7 @@ sonos(int cmd, char *resp1, char *resp2)
 
     ptr1 = resp1;
     ptr2 = resp2;
+    ptr3 = resp3;
     optr = resp1; //warning away
     copying = 0;
     int copycount = 0;
@@ -605,6 +640,7 @@ sonos(int cmd, char *resp1, char *resp2)
     char amp = 0;
     char c1 = resp1[0];
     char c2 = resp2[0];
+    char c3 = resp3[0];
     while (client.available()) {
       char            c = client.read();
 #ifdef SOAPDEBUG
@@ -641,11 +677,11 @@ sonos(int cmd, char *resp1, char *resp2)
       amp = 0;  
 
 
-#ifdef SOAPDEBUG            
+#ifdef FSMDEBUG            
       Serial.print(c);
 #endif
 
-      if (c1 || c2) {
+      if (c1 || c2 || c3) {
         /*
 				 * if a response has been identified, copy
          				 * the data
@@ -672,6 +708,8 @@ sonos(int cmd, char *resp1, char *resp2)
               c1 = 0;
             else if( copying == 2)
               c2 = 0;
+            else if( copying == 3)
+              c3 = 0;
             copying = 0;
             *optr = 0;
 
@@ -733,7 +771,19 @@ sonos(int cmd, char *resp1, char *resp2)
             }
           } 
           else
-            ptr2 = resp2;
+            ptr2 = resp2;     
+       
+          if (c == *ptr3) {
+            ptr3++;
+
+            if (*ptr3 == 0) {
+              copying = 3;
+              optr = resp3;
+              ptr3 = resp3;
+            }
+          } 
+          else
+            ptr3 = resp3;
         }
       }
 
@@ -744,6 +794,8 @@ sonos(int cmd, char *resp1, char *resp2)
       resp1[0] = -1;
     if ( c2 != 0 )
       resp2[0] = -1;
+    if ( c3 != 0 )
+      resp3[0] = -1;
   } 
   else {
     strcpy(resp1, "Connection error");
