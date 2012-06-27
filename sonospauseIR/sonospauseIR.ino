@@ -284,7 +284,7 @@ setup()
 #endif
 
 uint8_t         mac[6] = {
-    0xBE, 0xEF, 0xEE, 0x00, 0x20, 0x12  };
+    0xBE, 0xEF, 0xEE, 0x00, 0x20, 0x09  };
 
   delay(1000);
 
@@ -371,7 +371,7 @@ loop()
     // poll song name/artist every second
     if ( millis() > lasttrackpoll + 1000) {
       sonos(SONOS_TRACK, data1, data2, data3);
-      if (data1[0] != -1 )
+      if (data1[0] == -1 )
         strcpy(data1, "<no track>");
       if (data2[0] == -1 )
         strcpy(data2, "<no artist>");
