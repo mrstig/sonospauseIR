@@ -794,7 +794,7 @@ sonos(int cmd, char *resp1, char *resp2, char* resp3)
       resp1[0] = -1;
     if ( c2 != 0 )
       resp2[0] = -1;
-    if ( c3 != 0 )
+    if ( c3 != 0 || resp3[0] == 0 ) // empty streamContent => not radio
       resp3[0] = -1;
   } 
   else {
